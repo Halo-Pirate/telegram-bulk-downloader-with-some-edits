@@ -11,6 +11,7 @@ import JsonSerializer from './helpers/JsonSerializer';
 import checkbox from '@inquirer/checkbox';
 import getInputFilter from './helpers/getInputFilter';
 import getFilenameExtension from './helpers/getFilenameExtension';
+import getMessageDate from './helpers/getMessageDate';
 import MediaType from './types/MediaType';
 import { LogLevel } from 'telegram/extensions/Logger';
 import cliProgress from 'cli-progress';
@@ -153,11 +154,26 @@ class TelegramBulkDownloader {
           });
           bar.update(100);
           bar.stop();
-          const filePath = path.join(
+          const date = getMessageDate(msg);
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const stamp =
+            `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+            `_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+
+          const targetDir = path.join(
             downloadDir,
-            `${msg.id}.${getFilenameExtension(msg)}`
+            String(date.getFullYear()),
+            pad(date.getMonth() + 1)
+          );
+          fs.mkdirSync(targetDir, { recursive: true });
+
+          const filePath = path.join(
+            targetDir,
+            `${stamp}_${msg.id}.${getFilenameExtension(msg)}`
           );
           fs.writeFileSync(filePath, buffer as any);
+          fs.utimesSync(filePath, date, date);
+
           msgId = msg.id;
         } catch (err) {
           console.warn(err);
