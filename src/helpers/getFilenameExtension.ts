@@ -7,28 +7,28 @@ const extractExtensionFromFilename = (filename: string) => {
   return split[split.length - 1];
 };
 
-const getFilenameExtension = (msg: Api.Message) => {
+const getFilenameExtension = (msg: Api.Message): string => {
   switch (msg.media?.className) {
     case 'MessageMediaPhoto':
       return 'jpg';
-    case 'MessageMediaDocument':
-      if (
-        msg.media.document?.className === 'Document' &&
-        typeof mime.extension(msg.media.document.mimeType) === 'string'
-      )
-        return mime.extension(msg.media.document.mimeType) as string;
-      if (
-        msg.media.document?.className === 'Document' &&
-        msg.media.document.attributes
-      ) {
-        const attribute = msg.media.document.attributes.find(
+    case 'MessageMediaDocument': {
+      const doc = msg.media.document;
+      if (doc?.className === 'Document') {
+        const fromMime = mime.extension(doc.mimeType);
+        if (typeof fromMime === 'string') return fromMime;
+
+        const attribute = doc.attributes?.find(
           (e) => e.className === 'DocumentAttributeFilename'
         ) as Api.DocumentAttributeFilename | undefined;
-        if (attribute)
-          return extractExtensionFromFilename(attribute.fileName) || '';
+        if (attribute) {
+          const fromName = extractExtensionFromFilename(attribute.fileName);
+          if (fromName) return fromName;
+        }
       }
+      return 'bin';
+    }
     default:
-      throw new Error('Failed to extract extension');
+      return 'bin';
   }
 };
 
