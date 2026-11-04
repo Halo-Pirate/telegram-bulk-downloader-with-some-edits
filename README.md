@@ -1,4 +1,4 @@
-here is what is added by claude:
+## here is what is added by claude:
 1- fixed and error that stops the downloading when there is no file extension
 2- the downloaded media now puts the date modified and file name with the actual date that it got uploaded on telegram and is sorted to year/month folder 
 
