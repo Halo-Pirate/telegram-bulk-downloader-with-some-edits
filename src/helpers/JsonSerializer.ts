@@ -33,7 +33,13 @@ class JsonSerializer {
     let charIndex = -1;
 
     while (position + BUF_LENGTH > -1 && charIndex <= -1) {
-      const data = await promisify(read)(fd, buffer, 0, BUF_LENGTH, position);
+      const data = await promisify(read)(
+        fd,
+        buffer as any,
+        0,
+        BUF_LENGTH,
+        position
+      );
       charIndex = data.buffer.toString().lastIndexOf(']');
       if (charIndex > -1) break;
       // If position was 0, we read the whole file, break from loop
@@ -50,7 +56,13 @@ class JsonSerializer {
 
     const buffer2 = Buffer.alloc(1);
     const charBeforePos = await (
-      await promisify(read)(fd, buffer2, 0, 1, position + charIndex - 1)
+      await promisify(read)(
+        fd,
+        buffer2 as any,
+        0,
+        1,
+        position + charIndex - 1
+      )
     ).buffer.toString();
 
     if (charBeforePos === '[') {
@@ -59,7 +71,7 @@ class JsonSerializer {
 
     await promisify(write)(
       fd,
-      Buffer.from(replacer),
+      Buffer.from(replacer) as any,
       0,
       replacer.length,
       position + charIndex
