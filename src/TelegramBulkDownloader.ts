@@ -11,6 +11,7 @@ import JsonSerializer from './helpers/JsonSerializer';
 import checkbox from '@inquirer/checkbox';
 import getInputFilter from './helpers/getInputFilter';
 import getFilenameExtension from './helpers/getFilenameExtension';
+import getMessageDate from './helpers/getMessageDate';
 import MediaType from './types/MediaType';
 import { LogLevel } from 'telegram/extensions/Logger';
 import cliProgress from 'cli-progress';
@@ -111,6 +112,22 @@ class TelegramBulkDownloader {
       );
     }
 
+    // Collect message IDs of files that already exist in the output folder
+    // (matches both "<id>.ext" and "<date>_<id>.ext", in any subfolder)
+    const existingIds = new Set<number>();
+    const scanExisting = (dir: string) => {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          scanExisting(path.join(dir, entry.name));
+          continue;
+        }
+        const match = entry.name.match(/(?:^|_)(\d+)\.[^.]+$/);
+        if (match) existingIds.add(Number(match[1]));
+      }
+    };
+    scanExisting(this.state.get(id).outPath);
+
     while (true) {
       let offset = this.state
         .get(id)
@@ -131,7 +148,14 @@ class TelegramBulkDownloader {
       }
 
       let msgId = offset;
+      let skipped = 0;
       for (const msg of mediaMessages) {
+        if (existingIds.has(msg.id)) {
+          skipped++;
+          msgId = msg.id;
+          if (this.SIGINT) break;
+          continue;
+        }
         const bar = new cliProgress.SingleBar(
           {
             format: `${msg.id}.${getFilenameExtension(
@@ -142,15 +166,50 @@ class TelegramBulkDownloader {
         );
         bar.start(100, 0);
         try {
-          const buffer = await this.client.downloadMedia(msg, {
-            progressCallback: (downloaded, total) => {
-              if (this.SIGINT)
-                throw new Error(`Aborting download, SIGINT=true`);
-              const ratio = Number(downloaded) / Number(total);
-              const progress = Math.round(Number(ratio) * 100);
-              bar.update(progress);
-            },
-          });
+          // Retry transient errors (e.g. -503 Timeout, flood waits, network drops)
+          const MAX_ATTEMPTS = 6;
+          let buffer: any;
+          let current: any = msg;
+          for (let attempt = 1; ; attempt++) {
+            try {
+              buffer = await this.client.downloadMedia(current, {
+                progressCallback: (downloaded, total) => {
+                  if (this.SIGINT)
+                    throw new Error(`Aborting download, SIGINT=true`);
+                  const ratio = Number(downloaded) / Number(total);
+                  const progress = Math.round(Number(ratio) * 100);
+                  bar.update(progress);
+                },
+              });
+              break;
+            } catch (err: any) {
+              if (this.SIGINT || attempt >= MAX_ATTEMPTS) throw err;
+              bar.stop();
+              if (err?.errorMessage === 'FILE_REFERENCE_EXPIRED') {
+                // The file reference in the fetched message went stale:
+                // fetch the message again to get a fresh one, then retry
+                console.warn(
+                  `\n${msg.id}: file reference expired, refreshing message...`
+                );
+                const fresh = await this.client.getMessages(entity, {
+                  ids: msg.id,
+                });
+                if (fresh[0]) current = fresh[0];
+              } else {
+                const floodSeconds =
+                  typeof err?.seconds === 'number' ? err.seconds : 0;
+                const waitMs = Math.max(floodSeconds * 1000, attempt * 3000);
+                console.warn(
+                  `\n${msg.id}: ${err?.errorMessage ?? err?.message ?? err}. ` +
+                    `Retry ${attempt}/${MAX_ATTEMPTS - 1} in ${Math.round(
+                      waitMs / 1000
+                    )}s...`
+                );
+                await new Promise((resolve) => setTimeout(resolve, waitMs));
+              }
+              bar.start(100, 0);
+            }
+          }
           bar.update(100);
           bar.stop();
           const filePath = path.join(
@@ -158,13 +217,28 @@ class TelegramBulkDownloader {
             `${msg.id}.${getFilenameExtension(msg)}`
           );
           fs.writeFileSync(filePath, buffer as any);
+
+          // Keep the original file name, but set the file's date to the
+          // date the media was originally created/uploaded on Telegram
+          const date = getMessageDate(msg);
+          fs.utimesSync(filePath, date, date);
+
+          existingIds.add(msg.id);
           msgId = msg.id;
         } catch (err) {
+          bar.stop();
           console.warn(err);
+          if (!this.SIGINT) {
+            console.warn(`Failed to download ${msg.id}, giving up on this file`);
+            fs.appendFileSync(path.join(downloadDir, 'failed.txt'), `${msg.id}\n`);
+          }
         }
         if (jsonSerializer) await jsonSerializer.append(msg);
         if (this.SIGINT) break;
       }
+
+      if (skipped > 0)
+        console.log(`Skipped ${skipped} already downloaded file(s)`);
 
       offset = mediaMessages.length <= 0 ? offset + 999 : msgId;
 
