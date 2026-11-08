@@ -4,6 +4,17 @@
 
 all the code has been edited by claude.ai
 
+## How to use it 
+
+# perquisite 
+- node.js
+- extraction software example (winrar-7zip-etc)
+
+- first download the source code and extract it then navigate to the folder and open in terminal
+- run the following commands 
+```shell
+npm install --save-dev typescript@5
+```
 
 # telegram-bulk-downloader
 
