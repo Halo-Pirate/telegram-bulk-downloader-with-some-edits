@@ -4,17 +4,26 @@
 
 all the code has been edited by claude.ai
 
-## How to use it 
 
-# perquisite 
+## perquisite 
 - node.js
 - extraction software example (winrar-7zip-etc)
+
+# How to use it
 
 - first download the source code and extract it then navigate to the folder and open in terminal
 - run the following commands 
 ```shell
 npm install --save-dev typescript@5
 ```
+```shell
+npm run build
+```
+```shell
+node build/bin.js
+```
+after that it should work it will ask for telegram api id and hash and it will ask you to login
+
 
 # telegram-bulk-downloader
 
